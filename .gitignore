@@ -1,3 +1,4 @@
 *.edl
 *.txt
-/output
+/build
+/dist
