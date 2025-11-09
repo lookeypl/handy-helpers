@@ -5,15 +5,24 @@ from enum import IntEnum, StrEnum
 from io import TextIOWrapper
 from pathlib import Path
 from sys import exit
-import os
 import re
 import traceback
 
 
-def secondsToHMS(seconds: int, frame: int = 0):
+def secondsToHMS(seconds: int):
+    m, sec = divmod(seconds, 60)
+    hr, min = divmod(m, 60)
+    return "{0:02d}:{1:02d}:{2:02d}".format(hr, min, sec)
+
+def secondsToHMSF(seconds: int, frame: int = 0):
     m, sec = divmod(seconds, 60)
     hr, min = divmod(m, 60)
     return "{0:02d}:{1:02d}:{2:02d}:{3:02d}".format(hr, min, sec, frame)
+
+def HMSToSeconds(timestamp: str):
+    m = re.match('^(\\d+):(\\d\\d):(\\d\\d)', timestamp)
+    if m == None: raise Exception('Failed to parse timestamp in {0}'.format(timestamp))
+    return int(m.group(1)) * 3600 + int(m.group(2)) * 60 + int(m.group(3))
 
 
 class TimestampColor(StrEnum):
@@ -49,8 +58,8 @@ class Timestamp:
         self.mName = name
 
     def outputEDL(self, file: TextIOWrapper, eventOrdinal: int):
-        timestamp = secondsToHMS(self.mTimeSeconds, 0)
-        timestampPlusOne = secondsToHMS(self.mTimeSeconds, 1)
+        timestamp = secondsToHMSF(self.mTimeSeconds, 0)
+        timestampPlusOne = secondsToHMSF(self.mTimeSeconds, 1)
         file.writelines([
             "{0:03d}  001      V     C         {1} {2} {1} {2}\n".format(eventOrdinal, timestamp, timestampPlusOne),
             " |C:ResolveColor{0} |M:{1} |D:1\n".format(self.mColor.name, self.mName),
@@ -58,10 +67,13 @@ class Timestamp:
         ])
 
     def __str__(self):
-        return "({0}, {1}) {2}".format(secondsToHMS(self.mTimeSeconds), self.mColor.name, self.mName)
+        return "({0}, {1}) {2}".format(secondsToHMSF(self.mTimeSeconds), self.mColor.name, self.mName)
 
     def getTimestamp(self):
         return self.mTimeSeconds
+
+    def shiftTimestamp(self, secondsAdd: int):
+        self.mTimeSeconds = self.mTimeSeconds + secondsAdd
 
 
 
@@ -80,6 +92,7 @@ class ConverterState(StrEnum):
     RENAME_SINGLE = '3'
     EDIT_COLOR_SINGLE = '4'
     EDIT_COLOR_NAME_GROUP = '5'
+    SHIFT_TIMESTAMPS = '6'
     EXIT = 'Q'
 
 def stateToPrettyString(state: ConverterState):
@@ -89,6 +102,7 @@ def stateToPrettyString(state: ConverterState):
         case ConverterState.RENAME_SINGLE: return "Rename timestamp"
         case ConverterState.EDIT_COLOR_SINGLE: return "Change single timestamp's color"
         case ConverterState.EDIT_COLOR_NAME_GROUP: return "Change timestamp color by name group"
+        case ConverterState.SHIFT_TIMESTAMPS: return "Shift all timestamps' times"
         case ConverterState.EXIT: return "Exit"
         case _: return "UNKNOWN/INVALID/THIS SHOULD NOT BE SEEN"
 
@@ -113,11 +127,6 @@ class TimestampConverter:
         if m.group(1) == 'Record': return InfoWriterReaderState.RECORD_TIME
         elif m.group(1) == 'Stream': return InfoWriterReaderState.STREAM_TIME
         else: return InfoWriterReaderState.UNKNOWN
-
-    def parseTimestamp(self, timestamp: str):
-        m = re.match('^(\\d):(\\d\\d):(\\d\\d)', timestamp)
-        if m == None: raise Exception('Failed to parse timestamp in {0}'.format(timestamp))
-        return int(m.group(1)) * 3600 + int(m.group(2)) * 60 + int(m.group(3))
 
     # atIndex points where to insert the timestamp; negative value appends at the end
     def addTimestamp(self, timestamp: Timestamp, atIndex: int = -1):
@@ -178,6 +187,17 @@ class TimestampConverter:
 
         return color
 
+    def queryConfirmation(self, prompt: str, preamble: str = ""):
+        while True:
+            if len(preamble) > 0:
+                print(preamble)
+
+            a = input("{0} (y/n): ".format(prompt))
+            if a.capitalize() == 'N': return False
+            elif a.capitalize() == 'Y': return True
+            else:
+                print("Incorrect answer: {0}".format(a))
+
     def readInputFile(self):
         self.mTimestamps.clear()
         readerState = InfoWriterReaderState.UNKNOWN
@@ -205,12 +225,12 @@ class TimestampConverter:
                         if self.mIncludeDateTime: lastReadEventName += ' @ ' + m.group(2)
                     case InfoWriterReaderState.RECORD_TIME:
                         if not self.mFromStream:
-                            lastReadEventTimestampSeconds = self.parseTimestamp(line.split(' ')[0])
+                            lastReadEventTimestampSeconds = HMSToSeconds(line.split(' ')[0])
                             self.addTimestamp(Timestamp(lastReadEventName, lastReadEventTimestampSeconds))
                             writtenTimestamps += 1
                     case InfoWriterReaderState.STREAM_TIME:
                         if self.mFromStream:
-                            lastReadEventTimestampSeconds = self.parseTimestamp(line.split(' ')[0])
+                            lastReadEventTimestampSeconds = HMSToSeconds(line.split(' ')[0])
                             self.addTimestamp(Timestamp(lastReadEventName, lastReadEventTimestampSeconds))
                             writtenTimestamps += 1
                     case _:
@@ -240,21 +260,13 @@ class TimestampConverter:
 
         outPath = self.mInputPath.with_suffix(".edl")
 
-        while True:
-            print("Will convert to file {0}".format(outPath))
-            a = input("Is that okay? (y/n): ")
-            if a.capitalize() == 'N': return ConverterState.MAIN_MENU
-            elif a.capitalize() == 'Y': break
-            else:
-                print("Incorrect answer: {0}".format(a))
+        if not self.queryConfirmation(preamble="Will convert to file {0}".format(outPath),
+                                      prompt="Is that okay?"):
+            return ConverterState.MAIN_MENU
 
         if outPath.exists():
-            while True:
-                a = input("File {0} already exists, overwrite? (y/n): ".format(outPath))
-                if a.capitalize() == 'N': return ConverterState.MAIN_MENU
-                elif a.capitalize() == 'Y': break
-                else:
-                    print("Incorrect answer: {0}".format(a))
+            if not self.queryConfirmation("File {0} already exists, overwrite?".format(outPath)):
+                return ConverterState.MAIN_MENU
 
         with open(outPath, "w+t") as file:
             file.writelines([
@@ -353,6 +365,30 @@ class TimestampConverter:
 
         return ConverterState.MAIN_MENU
 
+    def processShiftTimestamps(self):
+        print("\nThis option will shift all timestamps forward by provided time.")
+        timeSeconds = 0
+        while True:
+            time = input("Provide time shift in \"H:MM:SS\" format (Q to cancel): ")
+            if time.capitalize() == 'Q':
+                return ConverterState.MAIN_MENU
+
+            try:
+                timeSeconds = HMSToSeconds(time)
+                break
+            except Exception:
+                print("Incorrect value provided")
+
+        if not self.queryConfirmation(preamble="\nWill shift all timestamps by {0} ({1} seconds)".format(secondsToHMS(timeSeconds), timeSeconds),
+                                      prompt="Is this okay?"):
+            return ConverterState.MAIN_MENU
+
+        for t in self.mTimestamps:
+            t.shiftTimestamp(timeSeconds)
+
+        print("\nShifted all timestamps by {0}".format(secondsToHMS(timeSeconds)))
+        return ConverterState.MAIN_MENU
+
     def mainLoop(self):
         print("=== InfoWriter log to EDL converter ===")
         if not self.mInputPath.exists():
@@ -371,6 +407,7 @@ class TimestampConverter:
                 case ConverterState.RENAME_SINGLE: state = self.processRenameSingle()
                 case ConverterState.EDIT_COLOR_SINGLE: state = self.processEditColorSingle()
                 case ConverterState.EDIT_COLOR_NAME_GROUP: state = self.processEditColorNameGroup()
+                case ConverterState.SHIFT_TIMESTAMPS: state = self.processShiftTimestamps()
                 case _: pass
 
         print("\nCheers, enjoy your day\n")
