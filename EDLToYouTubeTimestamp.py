@@ -62,7 +62,7 @@ class EDLReaderState(IntEnum):
 
 class EDLTimestampConverter:
     EDL_TIMESTAMP_REGEX = '^(\\d+)\\s+(\\d+)[\\sVC]+([\\d:]+) ([\\d:]+) ([\\d:]+) ([\\d:]+)\\s*$'
-    EDL_DETAILS_REGEX = '^\\s*\\|C:([A-Za-z]+)\\s*\\|M:([\\w\\s\'"!@#$%^&*().,-:;]+)\\s*\\|D:(\\d+)*\\s*$'
+    EDL_DETAILS_REGEX = '^\\s*\\|C:([A-Za-z]+)\\s*\\|M:([\\w\\s\'"!@#$%^&*?().,-:;]+)\\s*\\|D:(\\d+)*\\s*$'
 
     def __init__(self, filePath: str):
         self.mInputPath = Path(filePath)
@@ -183,6 +183,7 @@ def main():
     except Exception as e:
         print("Exception caught by main: {0}".format(e))
         traceback.print_exception(e)
+        input("\nPress Enter to close...")
         exit(1)
 
 if __name__ == "__main__":
