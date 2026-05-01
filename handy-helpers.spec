@@ -67,13 +67,49 @@ EDLToYouTubeTimestamp_exe = EXE(
     entitlements_file=None,
 )
 
+IsLiveOnTwitch = Analysis(
+    ['IsLiveOnTwitch.py'],
+    pathex=[],
+    binaries=[],
+    datas=[],
+    hiddenimports=[],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[],
+    noarchive=False,
+    optimize=0,
+)
+IsLiveOnTwitch_pyz = PYZ(IsLiveOnTwitch.pure)
+
+IsLiveOnTwitch_exe = EXE(
+    IsLiveOnTwitch_pyz,
+    IsLiveOnTwitch.scripts,
+    [],
+    exclude_binaries=True,
+    name='IsLiveOnTwitch',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    console=True,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+)
+
 coll = COLLECT(
     InfoWriterToEDL_exe,
     EDLToYouTubeTimestamp_exe,
+    IsLiveOnTwitch_exe,
     InfoWriterToEDL.binaries,
     InfoWriterToEDL.datas,
     EDLToYouTubeTimestamp.binaries,
     EDLToYouTubeTimestamp.datas,
+    IsLiveOnTwitch.binaries,
+    IsLiveOnTwitch.datas,
     strip=False,
     upx=True,
     upx_exclude=[],

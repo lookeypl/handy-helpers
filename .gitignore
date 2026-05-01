@@ -1,4 +1,6 @@
 *.edl
 *.txt
+/__pycache__
 /build
+/config
 /dist
